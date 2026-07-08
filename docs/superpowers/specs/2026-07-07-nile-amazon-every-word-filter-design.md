@@ -140,6 +140,29 @@ knockoff's full Amazon domain list (`.com .co.uk .de .fr .it .es .ca …`).
 - **E2E**: headless Chromium loads a real Amazon search HTML fixture with the
   content script + a query; asserts the correct tiles get `.nile-dim`.
 
+## Implementation notes & deliberate limitations
+
+Hardened against an adversarial review (62 probe cases, 42 code issues). Fixed:
+spelled-out title units of any length, thousands separators (`10,000mAh`,
+`1.000 GB`), punctuation-edged tokens (`.NET`, `C++`, `$5`, `(2)`), `USB--C`
+hyphen collapse, tolerance band inflation, and more. Remaining deliberate calls:
+
+- **Bits vs bytes**: `Gb`=gigabit, `GB`=gigabyte (base case is honoured). Mixed
+  or all-lowercase like `gb` → bytes (colloquial "gigabyte"). `Mb/s` written
+  with a slash reads as bits, not a rate — use `Mbps`.
+- **Bare magnitudes**: uppercase `1G`/`256G` compare by magnitude across
+  families (`256G` ≈ `256GB`, `1G` = `1000M`); lowercase `g`/`m` stay
+  grams/metres. Errs toward keeping.
+- **Thousands separators**: `1,000`/`1.000` → 1000 heuristically; leading-zero
+  decimals (`0.256`) are preserved. Space-grouped (`1 000`) is not handled.
+- **"Whole query must be one phrase"** is a literal consecutive-match mode:
+  spacing/hyphen/case flex apply, but quantity equivalence and the `~` operator
+  do not. It's an opt-in strict mode.
+- **caseSensitive** governs text only; numeric magnitude comparison stays
+  case-insensitive (case matters only where it disambiguates a unit prefix).
+- **Fail-open**: any internal error makes the engine return "keep", so a bad
+  input can never wrongly grey a result or break the page.
+
 ## Out of scope (v1)
 
 Hide/label actions (dim only), per-marketplace toggles, sync of allow/block

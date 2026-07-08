@@ -8,6 +8,10 @@
 // Loaded both as a content-script global (window.NileMatcher) and as a Node
 // module (module.exports) so the same code is unit-tested and shipped.
 //
+// Design principle: over-greying (hiding a wanted result) is the harmful
+// failure; under-greying (keeping an extra) is safe. Quantity matching errs
+// toward keeping. The whole engine is wrapped to fail OPEN (keep) on any error.
+//
 // See docs/superpowers/specs/2026-07-07-nile-amazon-every-word-filter-design.md
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -17,14 +21,14 @@
   var DEFAULT_OPTS = {
     enabled: true,
     wholeWords: true,          // SSD ≠ SSDs
-    spacingFlexible: true,     // 1TB = 1 TB
+    spacingFlexible: true,     // 1TB = 1 TB  (literal tokens; quantities always compare by value)
     hyphenFlexible: true,      // USB-C = USB C
     numberEquivalence: true,   // 1 = 1.0 = 1.00
     dataSizeEquivalence: true, // 1TB = 1000GB = 1024GB (binary+decimal)
-    measureEquivalence: true,  // 1GHz = 1000MHz, 1Ah = 1000mAh …
+    measureEquivalence: true,  // 1GHz = 1000MHz, 1Ah = 1000mAh, 1G = 1000M …
     caseSensitive: false,
     requireOrder: false,       // words must appear in query order
-    requirePhrase: false,      // whole query must be one consecutive phrase
+    requirePhrase: false,      // whole query must be one consecutive phrase (literal; no equivalence)
     ignoreConnectors: false,   // drop a/an/the/for/with/…
     tolerancePct: 10           // ~N% tolerance for the ~ operator
   };
@@ -35,36 +39,32 @@
   };
 
   // ── Units ──────────────────────────────────────────────────────────────────
-  // Spelled-out forms normalised to symbols before parsing. Plurals handled by
-  // stripping a trailing "s" on lookup.
+  // Spelled-out forms normalised to symbols; plurals handled by trailing-"s" strip.
   var SPELLED = {
     terabyte: "TB", gigabyte: "GB", megabyte: "MB", kilobyte: "KB", petabyte: "PB",
     terabit: "Tb", gigabit: "Gb", megabit: "Mb", kilobit: "Kb",
     gigahertz: "GHz", megahertz: "MHz", kilohertz: "kHz", hertz: "Hz",
     watt: "W", kilowatt: "kW", milliwatt: "mW", megawatt: "MW",
-    watthour: "Wh", kilowatthour: "kWh",
+    watthour: "Wh", kilowatthour: "kWh", milliwatthour: "mWh",
     volt: "V", kilovolt: "kV", millivolt: "mV",
     amp: "A", ampere: "A", milliamp: "mA", milliampere: "mA",
     amphour: "Ah", milliamphour: "mAh",
-    gram: "g", kilogram: "kg", milligram: "mg",
+    gram: "g", kilogram: "kg", milligram: "mg", gramme: "g", kilogramme: "kg",
     meter: "m", metre: "m", centimeter: "cm", centimetre: "cm",
     millimeter: "mm", millimetre: "mm", kilometer: "km", kilometre: "km",
-    liter: "L", litre: "L", milliliter: "ml", millilitre: "ml",
+    liter: "L", litre: "L", milliliter: "ml", millilitre: "ml", centiliter: "cl", centilitre: "cl",
     inch: "in", byte: "B", bit: "bit", megapixel: "MP"
   };
 
-  // Base unit tokens (checked longest-first). Single-letter b/B are conflated to
-  // the bytes family (storage-dominant); explicit "bit"/"bps" stay distinct.
+  // Base tokens (checked longest-first). Single-letter b/B disambiguated by case
+  // in matchUnit (Gb=bit, GB=byte); bare 'b'/'B' fall to bytes.
   var BASES = [
     { t: "bytes", f: "bytes" }, { t: "byte", f: "bytes" },
     { t: "bits", f: "bits" }, { t: "bit", f: "bits" },
     { t: "bps", f: "bitrate" },
     { t: "inch", f: "imperial_len" },
-    { t: "hz", f: "freq" },
-    { t: "ah", f: "battery" },
-    { t: "wh", f: "energy" },
-    { t: "mp", f: "pixels" },
-    { t: "in", f: "imperial_len" },
+    { t: "hz", f: "freq" }, { t: "ah", f: "battery" }, { t: "wh", f: "energy" },
+    { t: "mp", f: "pixels" }, { t: "in", f: "imperial_len" },
     { t: "b", f: "bytes" },
     { t: "w", f: "power" }, { t: "v", f: "voltage" }, { t: "a", f: "current" },
     { t: "m", f: "length" }, { t: "g", f: "mass" }, { t: "l", f: "volume" },
@@ -72,7 +72,6 @@
   ].sort(function (a, b) { return b.t.length - a.t.length; });
 
   var DATA_FAMILIES = { bytes: 1, bits: 1 };
-  // Families where a lowercase "m" prefix means milli (not mega).
   var MILLI_FAMILIES = {
     power: 1, current: 1, voltage: 1, battery: 1, energy: 1,
     length: 1, mass: 1, volume: 1
@@ -105,30 +104,58 @@
     }
   }
 
-  // unitInfo(raw) -> { family, factors:[..] } | null
-  // factors are canonical-unit multipliers; data units carry a decimal AND a
-  // binary factor so 1TB matches both 1000GB and 1024GB.
-  function unitInfo(raw) {
-    if (!raw) return null;
-    var norm = raw;
-    var spelled = SPELLED[norm.toLowerCase()] ||
-      (norm.toLowerCase().slice(-1) === "s" ? SPELLED[norm.toLowerCase().slice(0, -1)] : null);
-    if (spelled) norm = spelled;
-    var lower = norm.toLowerCase();
+  // A bare magnitude prefix (no base unit): 256G, 1G, 8M, 5k. Uppercase M/G are
+  // mega/giga (lowercase m/g stay milli/gram). Returns the power-of-1000 index.
+  function bareMagnitudePow(u) {
+    if (u.length !== 1) return null;
+    switch (u) {
+      case "K": case "k": return 1;
+      case "M": return 2;
+      case "G": return 3;
+      case "T": case "t": return 4;
+      case "P": case "p": return 5;
+      default: return null;
+    }
+  }
+
+  function matchUnit(cand) {
+    var lower = cand.toLowerCase();
     for (var i = 0; i < BASES.length; i++) {
       var base = BASES[i];
       if (lower.length >= base.t.length && lower.slice(-base.t.length) === base.t) {
-        var prefix = norm.slice(0, norm.length - base.t.length);
-        if (DATA_FAMILIES[base.f]) {
+        var prefix = cand.slice(0, cand.length - base.t.length); // original case
+        var fam = base.f;
+        if (base.t === "b") {
+          // Gb=gigabit, GB=gigabyte; bare/lowercase-prefixed → bytes (storage-dominant).
+          fam = (cand.charAt(cand.length - 1) === "b" && /^[KMGTP]$/.test(prefix)) ? "bits" : "bytes";
+        }
+        if (fam === "bytes" || fam === "bits") {
           var dp = dataPower(prefix);
           if (dp == null) continue;
-          if (dp.binaryOnly) return { family: base.f, factors: [Math.pow(1024, dp.n)] };
-          return { family: base.f, factors: [Math.pow(1000, dp.n), Math.pow(1024, dp.n)] };
+          if (dp.binaryOnly) return { family: fam, factors: [Math.pow(1024, dp.n)] };
+          return { family: fam, factors: [Math.pow(1000, dp.n), Math.pow(1024, dp.n)] };
         }
-        var f = prefixFactor(prefix, base.f);
+        var f = prefixFactor(prefix, fam);
         if (f == null) continue;
-        return { family: base.f, factors: [f] };
+        return { family: fam, factors: [f] };
       }
+    }
+    return null;
+  }
+
+  // unitInfo(raw) -> { family, factors:[..] } | null. Handles spelled forms +
+  // trailing-"s" plurals (GBs, Watts, Megabytes).
+  function unitInfo(raw) {
+    if (!raw) return null;
+    var tries = [raw];
+    var last = raw.charAt(raw.length - 1);
+    if (raw.length > 1 && (last === "s" || last === "S")) tries.push(raw.slice(0, -1));
+    for (var i = 0; i < tries.length; i++) {
+      var cand = tries[i];
+      var spelled = SPELLED[cand.toLowerCase()];
+      if (spelled) cand = spelled;
+      var r = matchUnit(cand);
+      if (r) return r;
     }
     return null;
   }
@@ -139,6 +166,31 @@
 
   function escapeRegExp(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function safeRegExp(src, flags) {
+    try { return new RegExp(src, flags); } catch (e) { return null; }
+  }
+
+  // Parse a numeric token, distinguishing decimal points from thousands
+  // separators: "1,000"/"1.000"→1000, "1,024"→1024, "0.256"→0.256, "1.5"→1.5,
+  // "1.234,56"→1234.56, "1.000.000"→1000000.
+  function parseNum(s) {
+    if (s == null) return NaN;
+    s = String(s).trim();
+    var hasDot = s.indexOf(".") >= 0, hasComma = s.indexOf(",") >= 0;
+    if (hasDot && hasComma) {
+      var dec = s.lastIndexOf(".") > s.lastIndexOf(",") ? "." : ",";
+      var thou = dec === "." ? "," : ".";
+      return parseFloat(s.split(thou).join("").replace(dec, "."));
+    }
+    var sep = hasDot ? "." : (hasComma ? "," : null);
+    if (!sep) return parseFloat(s);
+    var parts = s.split(sep);
+    if (parts.length > 2) return parseFloat(parts.join(""));           // 1.000.000 → thousands
+    // single separator: exactly-3-digit tail with a non-zero 1-3 digit head → thousands
+    if (/^[1-9]\d{0,2}$/.test(parts[0]) && /^\d{3}$/.test(parts[1])) return parseFloat(parts[0] + parts[1]);
+    return parseFloat(parts[0] + "." + parts[1]);
   }
 
   // ── Query parsing → term tree ────────────────────────────────────────────────
@@ -160,16 +212,20 @@
 
     function readWord() {
       var start = i;
-      while (i < n && !/\s/.test(q[i]) && q[i] !== "]" && q[i] !== "[" && q[i] !== '"') i++;
+      while (i < n && !/\s/.test(q[i]) && q[i] !== "]" && q[i] !== "[") {
+        // A double-quote ends a word — EXCEPT an inch mark right after a digit (13").
+        if (q[i] === '"') { if (i > start && /\d/.test(q[i - 1])) { i++; break; } else break; }
+        i++;
+      }
       var raw = q.slice(start, i);
       if (!raw) return null;
       var tolerance = false, text = raw;
-      if (raw[0] === "~") {                       // ~ is our operator; never a literal
-        if (/\d/.test(raw[1] || "")) tolerance = true;
+      if (raw[0] === "~") {                     // ~ is our operator; never a literal
+        if (/[\d.]/.test(raw[1] || "")) tolerance = true;
         text = raw.slice(1);
       }
-      if (!text) return null;
-      return { type: "word", text: text, tolerance: tolerance };
+      if (/^\.\d/.test(text)) text = "0" + text; // .5 → 0.5
+      return text ? { type: "word", text: text, tolerance: tolerance } : null;
     }
 
     function readGroup() {
@@ -198,30 +254,71 @@
       if (it) terms.push(it);
       if (i < n && q[i] === "]") i++; // stray close
     }
-    return terms;
+    return dedupe(mergeUnits(terms));
+  }
+
+  function isNumericText(t) { return /^\d+(?:[.,]\d+)*$/.test(t); }
+  function isUnitText(t) { return unitInfo(t) != null || bareMagnitudePow(t) != null; }
+
+  // Merge a spaced number+unit written as two words ("500 GB" → "500GB", "5 kg").
+  // Skips units that are also connector words (in, a) to avoid mangling "10 in 1".
+  function mergeUnits(items) {
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it.type === "group") { out.push({ type: "group", items: mergeUnits(it.items) }); continue; }
+      if (it.type === "word" && isNumericText(it.text) && i + 1 < items.length) {
+        var nx = items[i + 1];
+        if (nx.type === "word" && !nx.tolerance && isUnitText(nx.text) &&
+            !CONNECTORS[nx.text.toLowerCase()]) {
+          out.push({ type: "word", text: it.text + nx.text, tolerance: it.tolerance });
+          i++; continue;
+        }
+      }
+      out.push(it);
+    }
+    return out;
+  }
+
+  function dedupe(items) {
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it.type === "group") it = { type: "group", items: dedupe(it.items) };
+      var prev = out[out.length - 1];
+      if (prev && it.type === prev.type && it.type !== "group" &&
+          it.text === prev.text && it.tolerance === prev.tolerance) continue;
+      out.push(it);
+    }
+    return out;
   }
 
   function dropConnectors(items) {
-    return items.filter(function (it) {
-      if (it.type === "group") { it.items = dropConnectors(it.items); return it.items.length > 0; }
-      if (it.type === "word" && !it.tolerance) {
-        return !CONNECTORS[it.text.toLowerCase()];
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it.type === "group") {
+        var sub = dropConnectors(it.items);
+        if (sub.length) out.push({ type: "group", items: sub });
+        continue;
       }
-      return true;
-    });
+      if (it.type === "word" && !it.tolerance && CONNECTORS[it.text.toLowerCase()]) continue;
+      out.push(it);
+    }
+    return out;
   }
 
   // ── Regex builders ───────────────────────────────────────────────────────────
-  function boundaryWrap(src, opts) {
-    return opts.wholeWords ? "(?<![A-Za-z0-9])" + src + "(?![A-Za-z0-9])" : src;
-  }
+  // Unicode-aware word class; the numeric variant also excludes "." so 2 ≠ 2.0.
+  function boundaryClass(numeric) { return numeric ? "[\\p{L}\\p{N}.]" : "[\\p{L}\\p{N}]"; }
+  var WORDCHAR = /[\p{L}\p{N}]/u;
 
   // Flexible source for an unquoted word: hyphen→[-\s]+, digit/letter→\s*.
   function buildFlexSource(token, opts) {
-    var parts = token.split("-");
+    var parts = token.split(/-+/).filter(function (p) { return p.length; });
     var out = [];
     for (var pi = 0; pi < parts.length; pi++) {
-      if (pi > 0) out.push(opts.hyphenFlexible ? "[-\\s]+" : "\\-");
+      if (pi > 0) out.push(opts.hyphenFlexible ? "[-\\s]+" : "-");
       var subs = parts[pi].split(/(?<=\d)(?=\D)|(?<=\D)(?=\d)/);
       for (var si = 0; si < subs.length; si++) {
         if (si > 0) out.push(opts.spacingFlexible ? "\\s*" : "");
@@ -231,47 +328,60 @@
     return out.join("");
   }
 
-  function plainRegex(token, opts) {
-    var body = buildFlexSource(token, opts);
-    var src;
-    if (!opts.wholeWords) {
-      src = body;
-    } else if (/^\d+(?:\.\d+)?$/.test(token)) {
-      // Numeric literal (reached only when number-equivalence is off): keep "."
-      // and digits out of the boundary so "2" ≠ "2.0" / "20".
-      src = "(?<![A-Za-z0-9.])" + body + "(?![A-Za-z0-9.])";
-    } else {
-      src = boundaryWrap(body, opts);
-    }
-    return new RegExp(src, opts.caseSensitive ? "g" : "gi");
+  // Boundaries applied only where the token's edge char is itself a word char,
+  // so punctuation-edged tokens (.NET, C++, $5, (2)) aren't over-constrained.
+  function wrap(body, token, opts, numeric) {
+    if (!opts.wholeWords) return body;
+    var cls = boundaryClass(numeric);
+    var lb = WORDCHAR.test(token.charAt(0)) ? "(?<!" + cls + ")" : "";
+    var rb = WORDCHAR.test(token.charAt(token.length - 1)) ? "(?!" + cls + ")" : "";
+    return lb + body + rb;
   }
 
-  // Exact phrase (quoted): literal, \s+ between words, no flex.
+  function plainRegex(token, opts) {
+    var numeric = isNumericText(token);
+    var src = wrap(buildFlexSource(token, opts), token, opts, numeric);
+    return safeRegExp(src, opts.caseSensitive ? "gu" : "giu");
+  }
+
+  // Exact phrase (quoted): literal, \s+ between words, no flex, always bounded.
   function phraseRegex(text, opts) {
-    var words = text.trim().split(/\s+/).map(escapeRegExp);
-    var src = boundaryWrap(words.join("\\s+"), opts);
-    return new RegExp(src, opts.caseSensitive ? "g" : "gi");
+    text = text.trim();
+    var words = text.split(/\s+/).map(escapeRegExp);
+    var numeric = words.length === 1 && isNumericText(text);
+    var cls = boundaryClass(numeric);
+    var lb = WORDCHAR.test(text.charAt(0)) ? "(?<!" + cls + ")" : "";
+    var rb = WORDCHAR.test(text.charAt(text.length - 1)) ? "(?!" + cls + ")" : "";
+    return safeRegExp(lb + words.join("\\s+") + rb, opts.caseSensitive ? "gu" : "giu");
   }
 
   // ── Quantity handling ────────────────────────────────────────────────────────
-  // asQuantity(text, tolerance, opts) -> { family, values:[..], tol } | null
-  // family '__number__' is a bare number.
+  // asQuantity(text, tolerance, opts) -> { family, values, tol } | null
+  // families: '__number__' (bare), '__magnitude__' (bare prefix), or a unit family.
   function asQuantity(text, tolerance, opts) {
-    var m = /^(\d+(?:[.,]\d+)?)(.*)$/.exec(text);
+    var m = /^(\d+(?:[.,]\d+)*)(.*)$/.exec(text);
     if (!m) return null;
-    var num = parseFloat(m[1].replace(",", "."));
+    var num = parseNum(m[1]);
     if (!isFinite(num)) return null;
     var unit = m[2];
     var tol = tolerance ? Math.max(0, opts.tolerancePct) / 100 : 0;
+
     if (unit === "") {
       if (tolerance || opts.numberEquivalence) return { family: "__number__", values: [num], tol: tol };
       return null; // plain literal number
+    }
+    var mag = bareMagnitudePow(unit);
+    if (mag != null && (opts.measureEquivalence || tolerance)) {
+      var mv = tolerance ? [num * Math.pow(1000, mag)]
+        : [num * Math.pow(1000, mag), num * Math.pow(1024, mag)];
+      return { family: "__magnitude__", values: mv, tol: tol };
     }
     var info = unitInfo(unit);
     if (!info) return null; // unknown unit → treat token as a plain word
     var toggleOn = DATA_FAMILIES[info.family] ? opts.dataSizeEquivalence : opts.measureEquivalence;
     if (!toggleOn && !tolerance) return null;
-    return { family: info.family, values: info.factors.map(function (f) { return num * f; }), tol: tol };
+    var values = tolerance ? [num * info.factors[0]] : info.factors.map(function (f) { return num * f; });
+    return { family: info.family, values: values, tol: tol };
   }
 
   function valuesMatch(candidates, q) {
@@ -282,32 +392,37 @@
     });
   }
 
-  var TITLE_QTY_RE = /(\d+(?:[.,]\d+)?)(\s*)([A-Za-zµ"]{0,6})/g;
-
   // findQuantity(title, q, opts, from) -> { index, length } | null
   function findQuantity(title, q, opts, from) {
-    TITLE_QTY_RE.lastIndex = from || 0;
+    var re = /(\d+(?:[.,]\d+)*)(\s*)([A-Za-zµ"]+)?/g; // fresh instance: no shared lastIndex
+    re.lastIndex = from || 0;
     var m;
-    while ((m = TITLE_QTY_RE.exec(title))) {
-      var num = parseFloat(m[1].replace(",", "."));
-      var gap = m[2] || "", unitRaw = m[3] || "";
-      // A bare-number query matches any title number of equal value, regardless
-      // of a trailing unit — this only ever broadens a match (keeps a result),
-      // never wrongly greys one.
+    while ((m = re.exec(title))) {
+      if (m[0] === "") { re.lastIndex++; continue; }
+      var num = parseNum(m[1]);
+      if (!isFinite(num)) continue;
+      var unitRaw = m[3] || "";
+      var span = { index: m.index, length: m[1].length + (m[2] || "").length + unitRaw.length };
+
       if (q.family === "__number__") {
         if (valuesMatch([num], q)) return { index: m.index, length: m[1].length };
         continue;
       }
-      var unit = (gap.length > 0 && !opts.spacingFlexible) ? "" : unitRaw;
-      if (unit === "") continue;              // query has a unit; a bare title number can't satisfy it
-      var info = unitInfo(unit);
-      if (!info) continue;                    // number glued to a non-unit word (e.g. "3 pack")
-      if (info.family !== q.family) continue;
-      var cand = info.factors.map(function (f) { return num * f; });
-      if (valuesMatch(cand, q)) {
-        var len = m[1].length + (opts.spacingFlexible ? gap.length : 0) + unitRaw.length;
-        return { index: m.index, length: len };
+      if (q.family === "__magnitude__") {
+        var cands;
+        if (!unitRaw) cands = [num];
+        else {
+          var mg = bareMagnitudePow(unitRaw);
+          if (mg != null) cands = [num * Math.pow(1000, mg), num * Math.pow(1024, mg)];
+          else { var info2 = unitInfo(unitRaw); cands = info2 ? info2.factors.map(function (f) { return num * f; }) : [num]; }
+        }
+        if (valuesMatch(cands, q)) return span;
+        continue;
       }
+      if (!unitRaw) continue;                 // query wants a unit; bare title number can't satisfy it
+      var info = unitInfo(unitRaw);
+      if (!info || info.family !== q.family) continue;
+      if (valuesMatch(info.factors.map(function (f) { return num * f; }), q)) return span;
     }
     return null;
   }
@@ -317,6 +432,7 @@
     var q = asQuantity(item.text, item.tolerance, opts);
     if (q) return findQuantity(title, q, opts, from);
     var re = plainRegex(item.text, opts);
+    if (!re) return { index: from, length: 0 }; // fail-open: treat as present
     re.lastIndex = from;
     var m = re.exec(title);
     return m ? { index: m.index, length: m[0].length } : null;
@@ -324,6 +440,7 @@
 
   function phraseMatchAt(title, text, opts, from) {
     var re = phraseRegex(text, opts);
+    if (!re) return { index: from, length: 0 };
     re.lastIndex = from;
     var m = re.exec(title);
     return m ? { index: m.index, length: m[0].length } : null;
@@ -331,11 +448,11 @@
 
   function matchItem(title, item, opts, from) {
     if (item.type === "phrase") return phraseMatchAt(title, item.text, opts, from);
-    if (item.type === "group") return matchGroup(title, item.items, opts, from);
+    if (item.type === "group") return matchOrdered(title, item.items, opts, from);
     return wordMatch(title, item, opts, from);
   }
 
-  // Ordered subsequence: each item after the previous. Returns span or null.
+  // Ordered subsequence: each item at/after the previous. Returns span or null.
   function matchOrdered(title, items, opts, from) {
     var cursor = from, first = -1, lastEnd = from;
     for (var k = 0; k < items.length; k++) {
@@ -348,8 +465,26 @@
     return { index: first < 0 ? from : first, length: lastEnd - (first < 0 ? from : first) };
   }
 
-  function matchGroup(title, items, opts, from) {
-    return matchOrdered(title, items, opts, from);
+  // ── requirePhrase (literal consecutive mode; no quantity equivalence) ─────────
+  function collectWords(items, acc) {
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type === "group") collectWords(items[i].items, acc);
+      else acc.push(items[i]);
+    }
+    return acc;
+  }
+
+  function phraseModeMatch(title, terms, opts) {
+    var words = collectWords(terms, []);
+    if (!words.length) return true;
+    var srcs = words.map(function (it) {
+      if (it.type === "phrase") return it.text.trim().split(/\s+/).map(escapeRegExp).join("\\s+");
+      return buildFlexSource(it.text, opts);
+    });
+    var body = srcs.join("\\s+");
+    var lb = WORDCHAR.test((words[0].text || "").charAt(0)) && opts.wholeWords ? "(?<![\\p{L}\\p{N}])" : "";
+    var re = safeRegExp(lb + body, opts.caseSensitive ? "u" : "iu");
+    return re ? re.test(title) : true;
   }
 
   // ── Public entry point ───────────────────────────────────────────────────────
@@ -360,37 +495,10 @@
     return o;
   }
 
-  function collectWordTexts(items, acc) {
-    for (var i = 0; i < items.length; i++) {
-      var it = items[i];
-      if (it.type === "group") collectWordTexts(it.items, acc);
-      else acc.push(it);
-    }
-    return acc;
-  }
-
-  // requirePhrase: whole query as one consecutive phrase (each word flexible).
-  function phraseModeMatch(title, terms, opts) {
-    var words = collectWordTexts(terms, []);
-    if (!words.length) return true;
-    var srcs = words.map(function (it) {
-      if (it.type === "phrase") return phraseRegex(it.text, { caseSensitive: opts.caseSensitive, wholeWords: false }).source;
-      return buildFlexSource(it.text, opts);
-    });
-    var src = boundaryWrap(srcs.join("\\s+"), opts);
-    var re = new RegExp(src, opts.caseSensitive ? "" : "i");
-    return re.test(title);
-  }
-
-  function titleMatches(title, query, options) {
-    var opts = normalizeOpts(options);
-    if (!opts.enabled) return true;
-    if (title == null) title = "";
-    if (query == null) query = "";
+  function run(title, query, opts) {
     var terms = parseQuery(query);
     if (opts.ignoreConnectors) terms = dropConnectors(terms);
     if (!terms.length) return true;
-
     if (opts.requirePhrase) return phraseModeMatch(title, terms, opts);
     if (opts.requireOrder) return matchOrdered(title, terms, opts, 0) != null;
     for (var i = 0; i < terms.length; i++) {
@@ -399,11 +507,21 @@
     return true;
   }
 
+  function titleMatches(title, query, options) {
+    var opts = normalizeOpts(options);
+    if (!opts.enabled) return true;
+    if (title == null) title = "";
+    if (query == null) query = "";
+    try { return run(title, query, opts); }
+    catch (e) { return true; } // fail open: never grey due to an engine error
+  }
+
   var api = {
     titleMatches: titleMatches,
     parseQuery: parseQuery,
     unitInfo: unitInfo,
     asQuantity: asQuantity,
+    parseNum: parseNum,
     DEFAULT_OPTS: DEFAULT_OPTS,
     _internals: { buildFlexSource: buildFlexSource, plainRegex: plainRegex, findQuantity: findQuantity }
   };

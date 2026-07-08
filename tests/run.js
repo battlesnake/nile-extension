@@ -125,6 +125,81 @@ grey("no relevant terms", "1TB SATA", {}, "missing both");
 // ── Multi-word AND ordering independence ────────────────────────────────────
 keep("SSD SATA 1TB", "1TB SATA SSD", {}, "any order default");
 
+// ═══ Adversarial-hardening regressions ══════════════════════════════════════
+
+// Spelled-out title units (>6 chars) — the {0,6} cap bug
+keep("Drive 1000 Megabytes storage", "1GB", {}, "spelled megabytes");
+keep("CPU 1000 Megahertz turbo", "1GHz", {}, "spelled megahertz");
+keep("Kit 12 Megapixel Camera", "12MP", {}, "spelled megapixel");
+keep("Internal 1 Terabyte SSD", "1TB", {}, "spelled terabyte");
+keep("Cable 100 centimeter long", "1m", {}, "spelled centimeter");
+keep("Motor 1000 milliwatt unit", "1W", {}, "spelled milliwatt");
+keep("Dose 1000000 milligrams", "1kg", {}, "spelled milligrams");
+keep("Power Bank 3000 mAh cell", "3Ah", {}, "3Ah=3000mAh symbol");
+
+// Plural symbol units
+keep("USB Flash Drive 512GBs", "512GB", {}, "plural GBs");
+keep("Memory Module 1000MBs", "1GB", {}, "plural MBs");
+
+// Thousands separators
+keep("Portable Charger 10,000mAh Power Bank", "10000mAh", {}, "comma thousands mAh");
+keep("Internal SSD 1,024GB NVMe", "1TB", {}, "comma thousands 1,024GB");
+keep("Count 1,000 units", "1000", {}, "comma thousands bare");
+keep("Festplatte 1.000 GB intern", "1TB", {}, "de dot thousands");
+grey("Craft Beads Pack of 5,000 Pieces", "5", {}, "5 != 5,000");
+keep("SSD 0.256TB drive", "0.256TB", {}, "leading-zero decimal preserved");
+
+// Punctuation-edged tokens (boundary bug)
+keep("Learn ASP.NET Core Programming", ".NET", {}, "dotNET");
+keep("Widget(2) Pack deal", "(2)", {}, "paren token");
+keep("Learn C++17 today", "C++", {}, "cpp plus plus");
+keep("Cost US$5 each item", "$5", {}, "dollar token");
+
+// Hyphen collapse + no ReDoS
+keep("Cable USB--C fast", "USB-C", {}, "double hyphen collapses");
+
+// spacingFlexible must not disable value equivalence / operators
+keep("Enterprise Drive 1000 GB Capacity", "1TB", { spacingFlexible: false }, "equiv ignores spacing toggle");
+keep("Drive 950 GB unit", "~1TB", { spacingFlexible: false }, "tolerance ignores spacing toggle");
+
+// Tolerance band (binary must not inflate)
+grey("SSD 1.2TB internal", "~1TB", {}, "1.2TB out of 10pct");
+keep("SSD 1.05TB internal", "~1TB", {}, "1.05TB in band");
+
+// Bare magnitude equivalence
+keep("Signal Booster 1000M range", "1G", {}, "1G=1000M");
+keep("Smartphone 256GB Storage", "256G", {}, "256G~256GB");
+grey("Omega-3 Fish Oil 5000mg Softgels", "5G", {}, "5G not grams");
+
+// Bits vs bytes distinction
+grey("SD Card 1GB Memory", "1Gb", {}, "1Gb(bit) != 1GB(byte)");
+grey("Config chip holds 1Mb cache", "1MB", {}, "1MB(byte) != 1Mb(bit)");
+keep("SD Card 1GB Memory", "1GB", {}, "1GB byte matches byte");
+
+// Inch operator
+grey("Lenovo Legion 13 Gen 8 Gaming Laptop", '13"', {}, "13inch not matched by 13 gen");
+keep('Laptop 13" FHD display', '13"', {}, "13inch matches");
+keep("Monitor 24 inch curved", '24"', {}, "24inch matches spelled");
+
+// Merge spaced query quantity
+keep("Fast 500GB SSD internal", "500 GB", {}, "merge 500 GB");
+grey("Fast 256GB SSD internal", "500 GB", {}, "merge 500 GB mismatch");
+keep("Multitool 10 in 1 set", "10 in 1", {}, "10 in 1 not mangled");
+
+// Quoted numeric exactness (phraseRegex boundary)
+grey("Set of 2.0 pieces", '"2"', {}, "quoted 2 != 2.0");
+grey("model 20.5 x unit", '"20"', {}, "quoted 20 != 20.5");
+
+// Duplicate terms
+keep("One SSD only", "SSD SSD", { requireOrder: true }, "dup term dedup");
+
+// Order group with spaced quantity
+keep("1TB SATA SSD", "[1 TB SATA]", {}, "group merges 1 TB");
+
+// Unicode / degenerate safety (must not throw)
+keep("café latte maker", "café", {}, "unicode token matches");
+keep("anything here", "   ", {}, "whitespace-only query keeps");
+
 // ── Report ──────────────────────────────────────────────────────────────────
 console.log("\nNile matcher tests");
 console.log("  passed: " + pass);
