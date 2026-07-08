@@ -8,7 +8,11 @@
     "build": "node build.js",
     "build:zip": "node build.js --zip",
     "icons": "node scripts/render-icons.js",
-    "e2e": "node tests/e2e.js"
+    "e2e": "node tests/e2e.js",
+    "live": "node tests/live-check.js"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "puppeteer": "^25.3.0"
+  }
 }

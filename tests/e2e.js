@@ -16,6 +16,12 @@ var fs = require("fs");
 var path = require("path");
 
 var ROOT = path.join(__dirname, "..");
+
+// The sandbox blocks direct writes to /tmp, so steer all temp files (Chrome's
+// profile, mkdtemp) into a writable project-local dir.
+var TMP = process.env.NILE_E2E_TMP || path.join(ROOT, ".e2e-tmp");
+fs.mkdirSync(TMP, { recursive: true });
+process.env.TMPDIR = TMP;
 var FIXTURE = fs.readFileSync(path.join(__dirname, "fixtures", "amazon-search.html"), "utf8");
 var read = function (p) { return fs.readFileSync(path.join(ROOT, p), "utf8"); };
 
@@ -59,7 +65,11 @@ function serve() {
   if (!picked) { console.log("E2E SKIP: puppeteer not installed (npm i -D puppeteer)."); process.exit(0); }
   var puppeteer = picked.mod;
 
-  var launchOpts = { headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox"] };
+  var launchOpts = {
+    headless: "new",
+    userDataDir: path.join(TMP, "profile"),
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+  };
   if (picked.core) {
     var exe = findChrome();
     if (!exe) { console.log("E2E SKIP: puppeteer-core present but no Chrome/Chromium found."); process.exit(0); }
