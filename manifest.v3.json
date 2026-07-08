@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Nile — Amazon Every-Word Search Filter",
   "version": "1.0.0",
-  "description": "Greys out Amazon search results whose title is missing a word from your search query. Quote/order/tolerance operators + tunable matching.",
+  "description": "Greys out Amazon search results whose title is missing a word of your search query — tunable, quantity-aware matching.",
   "permissions": ["storage"],
   "icons": {
     "16": "icons/icon16.png",
@@ -25,12 +25,6 @@
   "options_ui": {
     "page": "options/options.html",
     "open_in_tab": true
-  },
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "nile@nile.search",
-      "strict_min_version": "109.0"
-    }
   },
   "content_scripts": [
     {

@@ -119,6 +119,14 @@ node scripts/render-icons.js   # regenerate PNG icons from icons/icon.svg
 The matcher is deliberately pure so it can be unit-tested exhaustively in Node
 and shipped unchanged as a content-script global (`window.NileMatcher`).
 
+## Publishing
+
+Store-ready assets and a step-by-step checklist live in `store-assets/`:
+listing copy (`listing.md`), the publishing walkthrough (`PUBLISHING.md`),
+1280×800 screenshots, and 440×280 / 1400×560 promo tiles. Privacy policy:
+[`PRIVACY.md`](PRIVACY.md) (Nile collects nothing). Build the uploadable package
+with `node build.js --zip` → `dist/nile-mv3.zip`.
+
 ## Design
 
 See [`docs/superpowers/specs/2026-07-07-nile-amazon-every-word-filter-design.md`](docs/superpowers/specs/2026-07-07-nile-amazon-every-word-filter-design.md).

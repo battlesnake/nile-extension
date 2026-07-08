@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="560" viewBox="0 0 1400 560" font-family="DejaVu Sans, Verdana, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12a37f"/><stop offset="1" stop-color="#0a5f4e"/>
+    </linearGradient>
+  </defs>
+  <rect width="1400" height="560" fill="url(#bg)"/>
+
+  <!-- Left: brand + tagline (kept within x < 800) -->
+  <g transform="translate(96,150)">
+    <rect width="110" height="110" rx="28" fill="#ffffff" opacity="0.16"/>
+    <path d="M34 88 V30 L76 88 V30" fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="232" y="232" font-size="86" font-weight="700" fill="#fff">Nile</text>
+  <text x="236" y="292" font-size="30" fill="#d3f0e6">Greys out Amazon results</text>
+  <text x="236" y="332" font-size="30" fill="#d3f0e6">missing a word of your search.</text>
+  <text x="236" y="392" font-size="20" fill="#a9dccd">Quantity-aware · phrase · order · ~tolerance</text>
+
+  <!-- Right: mini result list, one greyed -->
+  <g transform="translate(846,120)">
+    <rect x="0" y="0" width="470" height="320" rx="20" fill="#ffffff" opacity="0.10"/>
+    <text x="28" y="46" font-size="18" fill="#cdeee4">search: 1TB SATA SSD</text>
+
+    <g transform="translate(24,66)">
+      <rect x="0" y="0" width="422" height="56" rx="12" fill="#ffffff" opacity="0.96"/>
+      <circle cx="30" cy="28" r="8" fill="#0e7c66"/>
+      <text x="52" y="34" font-size="18" font-weight="600" fill="#14211d">Samsung 1TB SATA SSD</text>
+    </g>
+    <g transform="translate(24,134)">
+      <rect x="0" y="0" width="422" height="56" rx="12" fill="#ffffff" opacity="0.28"/>
+      <circle cx="30" cy="28" r="8" fill="#ffffff" opacity="0.45"/>
+      <text x="52" y="34" font-size="18" fill="#eafaf4" opacity="0.72">512GB SATA SSD</text>
+    </g>
+    <g transform="translate(24,202)">
+      <rect x="0" y="0" width="422" height="56" rx="12" fill="#ffffff" opacity="0.96"/>
+      <circle cx="30" cy="28" r="8" fill="#0e7c66"/>
+      <text x="52" y="34" font-size="18" font-weight="600" fill="#14211d">Crucial 1000GB SATA SSD</text>
+    </g>
+  </g>
+</svg>
