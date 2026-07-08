@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nile — settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="head">
+      <div class="mark" aria-hidden="true">N</div>
+      <div>
+        <h1>Nile</h1>
+        <p class="sub">Greys out Amazon results whose title is missing a word from your search.</p>
+      </div>
+      <label class="master" title="Turn Nile on or off">
+        <input type="checkbox" id="opt-enabled">
+        <span class="track"><span class="thumb"></span></span>
+      </label>
+    </header>
+
+    <section class="card">
+      <h2>Matching rules</h2>
+      <p class="hint">Each rule shows what it does when it’s on. Defaults are tuned for real Amazon titles.</p>
+      <div id="toggles" class="toggles"></div>
+      <div class="row row-number">
+        <div class="row-main">
+          <span class="row-label">Tolerance for <code>~</code></span>
+          <span class="row-ex">How far off a <code>~</code> quantity may be. <code>~1TB</code> at 10% matches 900GB–1.1TB.</span>
+        </div>
+        <div class="row-ctl">
+          <input type="number" id="opt-tolerancePct" min="0" max="100" step="1"> <span class="pct">%</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Search-box operators</h2>
+      <p class="hint">Type these in the Amazon search box. Amazon ignores them; Nile uses them.</p>
+      <ul class="ops">
+        <li><code>"exact phrase"</code> — that phrase must appear verbatim (part of the query can be exact without the whole thing being exact).</li>
+        <li><code>[word order]</code> — the bracketed words must appear in that order (gaps allowed).</li>
+        <li><code>~0.5TB</code> — matches anything within the tolerance above (e.g. 480GB). No space after <code>~</code>.</li>
+      </ul>
+    </section>
+
+    <section class="card tester">
+      <h2>Try your rules</h2>
+      <p class="hint">See how the current settings treat a title, without leaving this page.</p>
+      <label class="field"><span>Search query</span>
+        <input type="text" id="t-query" placeholder="1TB SATA SSD" spellcheck="false"></label>
+      <label class="field"><span>Product title</span>
+        <input type="text" id="t-title" placeholder="Samsung 1TB SATA III Internal SSD" spellcheck="false"></label>
+      <div id="t-verdict" class="verdict verdict-idle">Enter a query and a title.</div>
+    </section>
+
+    <footer class="foot">
+      <span>Nile · every-word Amazon filter</span>
+      <span id="ver"></span>
+    </footer>
+  </main>
+
+  <script src="../src/matcher.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

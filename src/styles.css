@@ -1,0 +1,16 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Nile injected styles. One job: grey out (dim + desaturate) search results
+   whose title is missing a query word. Hover restores the tile so a greyed
+   item is still readable. Everything prefixed nile- to stay out of Amazon's way.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.nile-dim {
+  opacity: 0.32;
+  filter: grayscale(0.85);
+  transition: opacity 0.18s ease, filter 0.18s ease;
+}
+
+.nile-dim:hover {
+  opacity: 1;
+  filter: none;
+}

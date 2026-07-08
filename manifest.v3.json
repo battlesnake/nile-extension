@@ -1,0 +1,67 @@
+{
+  "manifest_version": 3,
+  "name": "Nile — Amazon Every-Word Search Filter",
+  "version": "1.0.0",
+  "description": "Greys out Amazon search results whose title is missing a word from your search query. Quote/order/tolerance operators + tunable matching.",
+  "permissions": ["storage"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Nile settings",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "nile@nile.search",
+      "strict_min_version": "109.0"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.amazon.com/*",
+        "https://www.amazon.ca/*",
+        "https://www.amazon.com.mx/*",
+        "https://www.amazon.com.br/*",
+        "https://www.amazon.co.uk/*",
+        "https://www.amazon.ie/*",
+        "https://www.amazon.de/*",
+        "https://www.amazon.fr/*",
+        "https://www.amazon.it/*",
+        "https://www.amazon.es/*",
+        "https://www.amazon.nl/*",
+        "https://www.amazon.se/*",
+        "https://www.amazon.pl/*",
+        "https://www.amazon.com.be/*",
+        "https://www.amazon.com.tr/*",
+        "https://www.amazon.ae/*",
+        "https://www.amazon.sa/*",
+        "https://www.amazon.eg/*",
+        "https://www.amazon.co.za/*",
+        "https://www.amazon.in/*",
+        "https://www.amazon.co.jp/*",
+        "https://www.amazon.sg/*",
+        "https://www.amazon.com.au/*"
+      ],
+      "js": ["src/matcher.js", "src/content.js"],
+      "css": ["src/styles.css"],
+      "run_at": "document_end"
+    }
+  ]
+}
