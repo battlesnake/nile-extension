@@ -44,6 +44,7 @@ Type these straight into the Amazon search box — Amazon ignores them, Nile use
 them:
 • "exact phrase" — require a phrase verbatim, e.g. ssd "SATA III"
 • [word order]  — require words in order, e.g. [1TB SSD]
+• @brand        — the next word/phrase must match the product's brand, e.g. @DESTEK or @"Black Diamond"
 • ~0.5TB        — match within a tolerance (default 10%), e.g. ~0.5TB matches 480GB
 
 FULLY TUNABLE

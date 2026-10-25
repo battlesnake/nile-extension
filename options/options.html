@@ -41,6 +41,7 @@
       <ul class="ops">
         <li><code>"exact phrase"</code> — that phrase must appear verbatim (part of the query can be exact without the whole thing being exact).</li>
         <li><code>[word order]</code> — the bracketed words must appear in that order (gaps allowed).</li>
+        <li><code>@DESTEK</code> or <code>@"Black Diamond"</code> — the next word or phrase must match the product’s <em>brand</em>, not the title. Without <code>@</code>, a word may match either.</li>
         <li><code>~0.5TB</code> — matches anything within the tolerance above (e.g. 480GB). No space after <code>~</code>.</li>
       </ul>
     </section>
@@ -52,6 +53,8 @@
         <input type="text" id="t-query" placeholder="1TB SATA SSD" spellcheck="false"></label>
       <label class="field"><span>Product title</span>
         <input type="text" id="t-title" placeholder="Samsung 1TB SATA III Internal SSD" spellcheck="false"></label>
+      <label class="field"><span>Brand <em>(optional)</em></span>
+        <input type="text" id="t-brand" placeholder="Samsung" spellcheck="false"></label>
       <div id="t-verdict" class="verdict verdict-idle">Enter a query and a title.</div>
     </section>
 

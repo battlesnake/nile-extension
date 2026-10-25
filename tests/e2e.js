@@ -25,14 +25,34 @@ process.env.TMPDIR = TMP;
 var FIXTURE = fs.readFileSync(path.join(__dirname, "fixtures", "amazon-search.html"), "utf8");
 var read = function (p) { return fs.readFileSync(path.join(ROOT, p), "utf8"); };
 
-// Expected verdicts by data-asin: true = kept, false = greyed.
-var EXPECT = {
-  B0EVO1TB01: true,
-  B0MX500TB2: true,
-  B0SEAG1000: true,   // 1000GB == 1TB (data-size equivalence)
-  B0SAND512G: false,  // missing 1TB
-  B0WDBLUUSB: false   // missing SATA
-};
+// Cases: a query and the expected verdict per data-asin (true = kept, false = greyed).
+// Tiles not listed for a case are not asserted.
+var CASES = [
+  { query: "1TB SATA SSD", expect: {
+    B0EVO1TB01: true,
+    B0MX500TB2: true,
+    B0SEAG1000: true,   // 1000GB == 1TB (data-size equivalence)
+    B0SAND512G: false,  // missing 1TB
+    B0WDBLUUSB: false,  // missing SATA
+    B0DESTEK01: false   // VR glasses: no SSD words in title or brand
+  } },
+  // Brand sits in its own heading above the title and is NOT repeated in it.
+  { query: "DESTEK V5", expect: {
+    B0DESTEK01: true,   // brand DESTEK + title V5
+    B0NOBRAND1: false,  // no brand row, no DESTEK/V5 in title
+    B0ACCESSRY: true,   // "DESTEK V5" in the title (plain terms match brand or title)
+    B0EVO1TB01: false
+  } },
+  { query: "@DESTEK V5", expect: {
+    B0DESTEK01: true,
+    B0ACCESSRY: false,  // DESTEK only in the title, brand is Orbit Parts
+    B0NOBRAND1: false
+  } },
+  { query: '@"Orbit Parts" remote', expect: {
+    B0ACCESSRY: true,
+    B0DESTEK01: false
+  } }
+];
 
 function loadBrowserModule() {
   try { return { mod: require("puppeteer"), core: false }; } catch (e) {}
@@ -78,35 +98,40 @@ function serve() {
 
   var server = await serve();
   var port = server.address().port;
-  var url = "http://127.0.0.1:" + port + "/s?k=" + encodeURIComponent("1TB SATA SSD");
 
   var browser = await puppeteer.launch(launchOpts);
   var failed = false;
   try {
-    var page = await browser.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    await page.addStyleTag({ content: read("src/styles.css") });
-    await page.addScriptTag({ content: read("src/matcher.js") });
-    await page.addScriptTag({ content: read("src/content.js") });
-    await new Promise(function (r) { setTimeout(r, 400); }); // let scan + observer settle
-
-    var results = await page.evaluate(function () {
-      var out = {};
-      document.querySelectorAll("[data-asin]").forEach(function (t) {
-        out[t.getAttribute("data-asin")] = t.classList.contains("nile-dim");
-      });
-      return out;
-    });
-
     console.log("\nHeadless E2E (real Chromium, real DOM):");
-    Object.keys(EXPECT).forEach(function (asin) {
-      var greyed = !!results[asin];
-      var expectGrey = !EXPECT[asin];
-      var ok = greyed === expectGrey;
-      if (!ok) failed = true;
-      console.log("  " + (ok ? "✓" : "✗") + " " + asin + " → " +
-        (greyed ? "GREY" : "KEEP") + " (expected " + (expectGrey ? "GREY" : "KEEP") + ")");
-    });
+    for (var c = 0; c < CASES.length; c++) {
+      var kase = CASES[c];
+      var url = "http://127.0.0.1:" + port + "/s?k=" + encodeURIComponent(kase.query);
+      var page = await browser.newPage();
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+      await page.addStyleTag({ content: read("src/styles.css") });
+      await page.addScriptTag({ content: read("src/matcher.js") });
+      await page.addScriptTag({ content: read("src/content.js") });
+      await new Promise(function (r) { setTimeout(r, 400); }); // let scan + observer settle
+
+      var results = await page.evaluate(function () {
+        var out = {};
+        document.querySelectorAll("[data-asin]").forEach(function (t) {
+          out[t.getAttribute("data-asin")] = t.classList.contains("nile-dim");
+        });
+        return out;
+      });
+      await page.close();
+
+      console.log("  query " + JSON.stringify(kase.query));
+      Object.keys(kase.expect).forEach(function (asin) {
+        var greyed = !!results[asin];
+        var expectGrey = !kase.expect[asin];
+        var ok = greyed === expectGrey;
+        if (!ok) failed = true;
+        console.log("    " + (ok ? "✓" : "✗") + " " + asin + " → " +
+          (greyed ? "GREY" : "KEEP") + " (expected " + (expectGrey ? "GREY" : "KEEP") + ")");
+      });
+    }
   } finally {
     await browser.close();
     server.close();

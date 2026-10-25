@@ -24,7 +24,7 @@ Upload target: **`dist/nile-mv3.zip`** (Chrome requires Manifest V3).
 ## 2. Create the item
 1. Dashboard → **Add new item** → upload `dist/nile-mv3.zip`.
 2. If it complains about the version, note each future upload needs a higher
-   `version` than the last (currently `1.0.0`).
+   `version` than the last (currently `1.1.0`; the first upload was `1.0.0`).
 
 ## 3. Fill the Store listing tab
 Paste from **`store-assets/listing.md`**:

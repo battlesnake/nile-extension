@@ -200,6 +200,91 @@ keep("1TB SATA SSD", "[1 TB SATA]", {}, "group merges 1 TB");
 keep("café latte maker", "café", {}, "unicode token matches");
 keep("anything here", "   ", {}, "whitespace-only query keeps");
 
+// ═══ Brand ═══════════════════════════════════════════════════════════════════
+// titleMatches(title, query, opts, brand): plain terms may match brand OR title;
+// @term / @"phrase" must match the brand only.
+function bkeep(t, b, q, o, n) { check4(t, b, q, o, true, n); }
+function bgrey(t, b, q, o, n) { check4(t, b, q, o, false, n); }
+function check4(title, brand, query, opts, expect, note) {
+  var got = M.titleMatches(title, query, opts, brand);
+  if (got === expect) { pass++; return; }
+  fail++;
+  failures.push("  ✗ brand: " + note + " | query=" + JSON.stringify(query) + " title=" + JSON.stringify(title) +
+    " brand=" + JSON.stringify(brand) + " opts=" + JSON.stringify(opts || {}) +
+    " expected " + (expect ? "KEEP" : "GREY") + " got " + (got ? "KEEP" : "GREY"));
+}
+var VR = "V5 VR glasses with 50000+ movies";
+
+// plain terms consider the brand as well as the title
+bkeep(VR, "DESTEK", "DESTEK V5", {}, "brand-only word satisfies plain term");
+bgrey(VR, "DESTEK", "DESTEK V6", {}, "other term still required");
+bgrey(VR, "", "DESTEK V5", {}, "no brand known: DESTEK missing from title");
+bkeep(VR, "DESTEK", "V5 VR", {}, "title-only terms unaffected by brand");
+bkeep("DESTEK V5 VR glasses", "DESTEK", "DESTEK V5", {}, "brand repeated in title");
+bkeep(VR, "Black Diamond", "diamond V5", {}, "multi-word brand, one word");
+bkeep(VR, "Black Diamond", '"black diamond" V5', {}, "quoted phrase hits brand");
+bgrey(VR, "DESTEK", "DESTEK V5", { includeBrand: false }, "includeBrand off: brand ignored");
+bkeep("DESTEK V5 VR", "DESTEK", "DESTEK V5", { includeBrand: false }, "includeBrand off: title still matches");
+bkeep(VR, "  DESTEK \n ", "DESTEK", {}, "brand whitespace normalised");
+bkeep(VR, "DESTEK", "destek", {}, "brand case-insensitive");
+bgrey(VR, "DESTEK", "destek", { caseSensitive: true }, "brand case-sensitive on");
+bkeep(VR, "3M", "3M V5", {}, "brand with digit");
+bgrey(VR, "DESTEKS", "DESTEK V5", {}, "brand whole word");
+bkeep(VR, null, "V5", {}, "null brand ok");
+bkeep(VR, undefined, "V5", {}, "undefined brand ok");
+
+// ordered / phrase modes see "brand title"
+bkeep(VR, "DESTEK", "DESTEK V5", { requireOrder: true }, "order: brand before title");
+bkeep(VR, "DESTEK", "V5 DESTEK", { requireOrder: true }, "order: brand may follow title (either arrangement)");
+bkeep(VR, "DESTEK", "DESTEK V5", { requirePhrase: true }, "phrase spans brand+title");
+bkeep(VR, "DESTEK", "[DESTEK V5]", {}, "group spans brand+title");
+bgrey(VR, "DESTEK", "[V5 DESTEK]", {}, "group order violated across brand/title");
+
+// @ operator
+bkeep(VR, "DESTEK", "@DESTEK V5", {}, "@word matches brand");
+bgrey("DESTEK V5 VR glasses", "Other", "@DESTEK V5", {}, "@word ignores a title hit");
+bgrey("DESTEK V5 VR glasses", "Other", "@DESTEK", {}, "@word title-only hit greyed");
+bgrey(VR, "DESTEK", "@V5", {}, "@word must be in brand not title");
+bkeep(VR, "Black Diamond", '@"black diamond" V5', {}, "@phrase matches brand");
+bgrey(VR, "Black Diamond", '@"diamond black" V5', {}, "@phrase order literal");
+bkeep(VR, "Black Diamond", "@black @diamond", {}, "two @words, any order");
+bkeep(VR, "Black Diamond", "@diamond @black", {}, "two @words reversed");
+bgrey(VR, "Black Diamond", "@diamond @black", { requireOrder: true }, "@words ordered mode within brand");
+bkeep(VR, "Black Diamond", "@black @diamond", { requireOrder: true }, "@words ordered mode ok");
+bkeep(VR, "Black Diamond", "@black @diamond", { requirePhrase: true }, "@words phrase mode ok");
+bgrey(VR, "Black Red Diamond", "@black @diamond", { requirePhrase: true }, "@words phrase mode adjacent needed");
+bkeep(VR, "DESTEK", "@DESTEK", { includeBrand: false }, "@ works even with includeBrand off");
+bgrey(VR, "DESTEK", "@DESTEK V6", {}, "@ word ok but title term missing");
+bkeep(VR, "DESTEK", "V5 @DESTEK", {}, "@ after plain term");
+bkeep(VR, "DESTEK", "[V5 @DESTEK]", {}, "@ inside group is lifted out of the order chain");
+bkeep(VR, "DESTEK", "@DESTEK [V5 VR]", {}, "@ beside a group");
+bgrey(VR, "DESTEK", "@DESTEK [VR V5]", {}, "@ beside a violated group");
+bkeep(VR, "DESTEK", "@desTEK", {}, "@ case-insensitive");
+bgrey(VR, "DESTEK", "@desTEK", { caseSensitive: true }, "@ case-sensitive on");
+// no brand on the tile → @terms fall back to the title
+bkeep("DESTEK V5 VR glasses", "", "@DESTEK V5", {}, "no brand: @ falls back to title (hit)");
+bgrey(VR, "", "@DESTEK V5", {}, "no brand: @ falls back to title (miss)");
+// quantity-style brand terms
+bkeep("Cable", "3M", "@3M", {}, "@3M brand");
+bgrey("Cable 3M long", "Belkin", "@3M", {}, "@3M not satisfied by title length");
+// degenerate @ forms are dropped / harmless
+bkeep(VR, "DESTEK", "@ V5", {}, "lone @ dropped");
+bkeep(VR, "DESTEK", "V5 @", {}, "trailing @ dropped");
+bkeep(VR, "DESTEK", "@", {}, "only @ keeps");
+bkeep(VR, "DESTEK", '@"" V5', {}, "@ empty phrase dropped");
+bkeep(VR, "DESTEK", "@@DESTEK V5", {}, "double @ collapses to one");
+bkeep(VR, "DESTEK", "@@ V5", {}, "doubled lone @ dropped");
+bkeep("Remote for V5", "DESTEK", "V5 DESTEK", { requirePhrase: true }, "phrase: title ends in V5, brand follows");
+bgrey(VR, "DESTEK", "V5 DESTEK", { requirePhrase: true }, "phrase: V5 and DESTEK not adjacent");
+bgrey(VR, "DESTEK", "VR DESTEK V5", { requireOrder: true }, "order: still enforced across brand/title");
+bkeep(VR, { toString: function () { return "false"; } }, "V5", {}, "non-string brand ignored");
+bgrey(VR, false, "false", {}, "boolean brand not coerced to text");
+bkeep("foo@bar.com cable", "Acme", "foo@bar.com", {}, "@ mid-word stays literal");
+bkeep(VR, "DESTEK", "@[DESTEK V5]", {}, "@[ group treated as plain group");
+// dedupe / merge must not cross the brand boundary
+bkeep("Drive 500GB", "Acme GB", "500 @GB", {}, "number then @unit are not merged");
+bkeep("Cable", "500GB Brand", "@500 @GB", {}, "@ number + @ unit merge");
+
 // ── Report ──────────────────────────────────────────────────────────────────
 console.log("\nNile matcher tests");
 console.log("  passed: " + pass);

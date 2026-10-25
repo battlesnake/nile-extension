@@ -29,7 +29,9 @@
     { key: "requirePhrase", label: "Whole query must be one phrase",
       ex: '<code>gaming mouse</code> matches “RGB Gaming Mouse” — not “Mouse for Gaming”.' },
     { key: "ignoreConnectors", label: "Ignore connector words",
-      ex: '<code>case for iphone</code> — the “for” isn’t required (matches “iPhone Case”).' }
+      ex: '<code>case for iphone</code> — the “for” isn’t required (matches “iPhone Case”).' },
+    { key: "includeBrand", label: "Also match the brand",
+      ex: '<code>DESTEK V5</code> matches brand “DESTEK” + title “V5 VR Glasses…”. Off: only the title counts (<code>@brand</code> still works).' }
   ];
 
   var settings = Object.assign({}, DEFAULTS);
@@ -87,17 +89,18 @@
   function renderVerdict() {
     var q = $("t-query").value;
     var title = $("t-title").value;
+    var brand = $("t-brand").value;
     var el = $("t-verdict");
     if (!q.trim() || !title.trim()) {
       el.className = "verdict verdict-idle";
       el.textContent = "Enter a query and a title.";
       return;
     }
-    var keep = M.titleMatches(title, q, settings);
+    var keep = M.titleMatches(title, q, settings, brand);
     el.className = "verdict " + (keep ? "verdict-keep" : "verdict-grey");
     el.textContent = keep
-      ? "Kept — the title contains every query term."
-      : "Greyed out — the title is missing a query term.";
+      ? "Kept — the title (or brand) contains every query term."
+      : "Greyed out — the title (or brand) is missing a query term.";
   }
 
   // ── Load + reflect ─────────────────────────────────────────────────────────
@@ -135,6 +138,7 @@
     });
     $("t-query").addEventListener("input", renderVerdict);
     $("t-title").addEventListener("input", renderVerdict);
+    $("t-brand").addEventListener("input", renderVerdict);
 
     // Reflect live changes made elsewhere (e.g. another options tab).
     try {

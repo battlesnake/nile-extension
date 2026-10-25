@@ -1,7 +1,8 @@
 # Nile — Amazon Every-Word Search Filter
 
 A browser extension (Manifest **V3** and **V2**) that **greys out** any Amazon
-search result whose **title does not contain every word of your search query**.
+search result whose **title (or brand) does not contain every word of your
+search query**.
 
 Search `1TB SATA SSD` and Amazon still shows you `512GB SATA SSD` and
 `1TB USB SSD`. Nile dims them — they're missing `1TB` and `SATA` respectively —
@@ -46,6 +47,11 @@ Click the toolbar button any time to open **settings**.
 A result is **kept** only if its title satisfies **every** term in your query
 (connector words included). Otherwise it's greyed.
 
+- **Title or brand**: Amazon often shows the brand on its own line above the
+  title (brand `DESTEK`, title “V5 VR Glasses…”). A plain word may match
+  either, so `DESTEK V5` keeps that result. Switch off with *Also match the
+  brand*; use `@` (below) to demand a brand match.
+
 - **Whole-word, case-insensitive** by default: `SSD` matches “2TB SSD” and
   “SSD-Drive”, but not “SSDs” or “mSSD”.
 - **Spacing-flexible**: `1TB` matches “1 TB”.
@@ -70,6 +76,7 @@ filters it precisely.
 |---|---|---|
 | `"exact phrase"` | that phrase must appear verbatim (one part of the query can be exact without the whole query being exact) | `ssd "SATA III"` |
 | `[a b c]` | the bracketed words must appear in that left-to-right order (gaps allowed) | `[1TB SSD]` |
+| `@word` / `@"phrase"` | the next word or phrase must match the product's **brand**, not the title (plain words may match either) | `@DESTEK V5`, `@"Black Diamond" jacket` |
 | `~<num><unit>` | matches anything within the tolerance % (default 10%); no space after `~` | `~0.5TB` matches 480GB |
 
 ## Settings
@@ -90,6 +97,7 @@ across your browser profile.
 | Words must appear in order | Off |
 | Whole query must be one phrase | Off |
 | Ignore connector words | Off |
+| Also match the brand | On |
 | Tolerance % (for `~`) | 10 |
 
 ---

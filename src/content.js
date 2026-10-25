@@ -2,8 +2,8 @@
 // Nile content script — the DOM layer.
 //
 // On Amazon search pages: read the query, find product tiles, ask NileMatcher
-// whether each title contains every query word, and grey out the ones that
-// don't. Logic lives in matcher.js (loaded first); this file only touches the
+// whether each title (or brand) contains every query word, and grey out the
+// ones that don't. Logic lives in matcher.js (loaded first); this file only touches the
 // page. Tile selectors + title extraction adapted from Shpigford/knockoff.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -35,13 +35,34 @@
     return k.trim();
   }
 
-  // ── Title ────────────────────────────────────────────────────────────────
+  // ── Title and brand ──────────────────────────────────────────────────────
+  // Some layouts (e.g. amazon.de) put the brand in its own <h2 class="a-size-mini">
+  // above the title link, so "the first h2" is not necessarily the title: the
+  // title is the h2 inside the product link.
+  function titleHeading(tile) {
+    return tile.querySelector('[data-cy="title-recipe"] a h2.a-text-normal') ||
+      tile.querySelector('[data-cy="title-recipe"] a h2') ||
+      tile.querySelector("a h2") ||
+      tile.querySelector("h2.a-text-normal") ||
+      tile.querySelector("h2");
+  }
+
   function tileTitle(tile) {
-    var h2 = tile.querySelector("h2");
+    var h2 = titleHeading(tile);
     var text = h2
       ? (h2.textContent || h2.getAttribute("aria-label") || "")
       : ((tile.querySelector("a.a-text-normal") || {}).textContent || "");
     return text.replace(/^Sponsored Ad [–-]\s*/i, "").trim();
+  }
+
+  // The separate brand heading, when the layout has one; "" otherwise.
+  function tileBrand(tile) {
+    var title = titleHeading(tile);
+    // Scoped to the title block: a badge heading elsewhere in the tile
+    // ("ClimatePartner Verified") must never be mistaken for the brand.
+    var h = tile.querySelector('[data-cy="title-recipe"] h2.a-size-mini');
+    if (!h || h === title) return "";
+    return (h.textContent || "").trim();
   }
 
   // ── Scan ───────────────────────────────────────────────────────────────────
@@ -54,7 +75,7 @@
     if (tile.getAttribute("data-nile-q") === query) return;
     tile.setAttribute("data-nile-q", query);
 
-    var keep = M.titleMatches(title, query, settings);
+    var keep = M.titleMatches(title, query, settings, tileBrand(tile));
     tile.classList.toggle("nile-dim", !keep);
   }
 

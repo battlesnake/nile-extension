@@ -55,16 +55,20 @@ var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, l
     var data = await page.evaluate(function () {
       var out = [];
       document.querySelectorAll('div[data-component-type="s-search-result"]').forEach(function (t) {
-        var h2 = t.querySelector("h2");
+        var h2 = t.querySelector("a h2") || t.querySelector("h2");
         var title = (h2 ? (h2.textContent || h2.getAttribute("aria-label") || "") : "")
           .replace(/^Sponsored Ad [–-]\s*/i, "").trim();
-        if (title) out.push({ greyed: t.classList.contains("nile-dim"), title: title });
+        var bh = t.querySelector("h2.a-size-mini");
+        var brand = bh && bh !== h2 ? (bh.textContent || "").trim() : "";
+        if (title) out.push({ greyed: t.classList.contains("nile-dim"), title: title, brand: brand });
       });
       return out;
     });
     var greyed = data.filter(function (d) { return d.greyed; }).length;
     console.log("\nLIVE query: " + JSON.stringify(QUERY));
     console.log("tiles: " + data.length + " · greyed: " + greyed + " · kept: " + (data.length - greyed) + "\n");
-    data.forEach(function (d) { console.log("  [" + (d.greyed ? "GREY" : "KEEP") + "] " + d.title.slice(0, 92)); });
+    data.forEach(function (d) {
+      console.log("  [" + (d.greyed ? "GREY" : "KEEP") + "] " + (d.brand ? "{" + d.brand + "} " : "") + d.title.slice(0, 92));
+    });
   } finally { await browser.close(); }
 })().catch(function (e) { console.error("LIVE error:", e.message); process.exit(1); });

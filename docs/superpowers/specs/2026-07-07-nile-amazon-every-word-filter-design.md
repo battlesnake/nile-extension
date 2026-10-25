@@ -40,10 +40,33 @@ ignore, so Amazon returns a superset and we filter precisely.
 | `"phrase"` | exact phrase for *part* of the query (case-insensitive, consecutive, in order); no flex inside | `ssd "SATA III"` requires the literal phrase "SATA III" |
 | `[a b c]` | **order group**: bracketed terms must appear in that left-to-right order (gaps allowed), each still matched flexibly | `[1TB SSD]` needs 1TB before SSD |
 | `~<num>[unit]` | **±N% tolerance** on a quantity (no space after `~`); N = "tolerance %" setting (default 10) | `~0.5TB` matches `480GB`…`550GB` |
+| `@word` / `@"phrase"` | the next word or phrase must match the **brand**, not the title (added 2026-10-25) | `@DESTEK V5`, `@"Black Diamond" jacket` |
 
 Operators compose: groups may contain phrases/words/tolerance terms; `~` may
-appear inside `[...]`. Reserved chars `" [ ] ~` are treated as operators, not
-literal title text.
+appear inside `[...]`. Reserved chars `" [ ] ~ @` are treated as operators, not
+literal title text (`@` only at the start of a word; a lone `@` is dropped,
+`foo@bar` stays literal; `@[...]` is just a plain group).
+
+### Brand (2026-10-25)
+
+Some layouts (amazon.de, many categories) show the brand in its own heading
+above the title (`<h2 class="a-size-mini">DESTEK</h2>`, title `V5 VR Glasses…`),
+so a title-only filter greyed `DESTEK V5` results. Now:
+
+- **Plain terms** match the **brand or the title**: the engine searches
+  `brand + " " + title`, so quantity, phrase and order modes also see the brand
+  first, as on a product page. Toggle: *Also match the brand* (`includeBrand`,
+  default on). Off ⇒ title only.
+- **`@` terms** are matched against the **brand alone** (the same mode —
+  each-term / order / phrase — applies within the `@` terms). `@` terms
+  inside `[...]` are lifted out of the order chain. Works even with
+  `includeBrand` off.
+- **No brand exposed** by the tile (e.g. sponsored tiles, list layouts without
+  a brand row — checked live on amazon.co.uk/.com): `@` terms fall back to the
+  **title**, i.e. the best remaining evidence.
+- DOM: the title is the `h2` inside the product link (not "the first `h2`",
+  which is the brand on brand-row layouts); the brand is
+  `[data-cy="title-recipe"] h2.a-size-mini`.
 
 ### Matching rules
 
@@ -94,9 +117,10 @@ Master **Enabled**, plus (each rendered with in-UI does/doesn't-match examples):
 | Words must appear in order | Off | `red case`✓"Red Phone Case"; ✗"Case for Red phone" |
 | Whole query must be one phrase | Off | `gaming mouse`✓"RGB Gaming Mouse"; ✗"Mouse for Gaming" |
 | Ignore connector words | Off | `case for iphone`✓"iPhone Case"; ✗"Samsung Case" |
+| Also match the brand | On | `DESTEK V5`✓ brand "DESTEK" + title "V5 VR Glasses…" |
 | Tolerance % (for `~`) | 10 | `~1TB` matches 900GB–1.1TB |
 
-Per-query operators (`"" [] ~`) always work regardless of toggles.
+Per-query operators (`"" [] ~ @`) always work regardless of toggles.
 
 ## Architecture
 

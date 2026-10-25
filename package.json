@@ -1,6 +1,6 @@
 {
   "name": "nile-search",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Chrome/Firefox extension (MV3 + MV2) that greys out Amazon search results whose title is missing a word from your search query.",
   "private": true,
   "scripts": {

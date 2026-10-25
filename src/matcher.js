@@ -30,6 +30,7 @@
     requireOrder: false,       // words must appear in query order
     requirePhrase: false,      // whole query must be one consecutive phrase (literal; no equivalence)
     ignoreConnectors: false,   // drop a/an/the/for/with/…
+    includeBrand: true,        // plain terms may match the brand too (@terms always use brand only)
     tolerancePct: 10           // ~N% tolerance for the ~ operator
   };
 
@@ -196,6 +197,8 @@
   // ── Query parsing → term tree ────────────────────────────────────────────────
   // Item = { type:'word', text, tolerance } | { type:'phrase', text }
   //      | { type:'group', items:[...] }
+  // A word/phrase may carry field:"brand" (the @ operator): it must match the
+  // brand, not the title.
   function parseQuery(q) {
     var i = 0, n = q.length, terms = [];
 
@@ -246,6 +249,13 @@
       if (c === "[") return readGroup();
       if (c === '"') return readPhrase();
       if (c === "]") { i++; return null; }
+      if (c === "@") {                          // @ is our operator: next word/phrase is a brand term
+        while (i < n && q[i] === "@") i++;      // @@word == @word
+        if (i >= n || /\s/.test(q[i]) || q[i] === "]") return null; // lone @ is dropped
+        var next = (q[i] === "[") ? readGroup() : (q[i] === '"') ? readPhrase() : readWord();
+        if (next && next.type !== "group") next.field = "brand"; // @[..] is just a plain group
+        return next;
+      }
       return readWord();
     }
 
@@ -269,9 +279,9 @@
       if (it.type === "group") { out.push({ type: "group", items: mergeUnits(it.items) }); continue; }
       if (it.type === "word" && isNumericText(it.text) && i + 1 < items.length) {
         var nx = items[i + 1];
-        if (nx.type === "word" && !nx.tolerance && isUnitText(nx.text) &&
+        if (nx.type === "word" && !nx.tolerance && nx.field === it.field && isUnitText(nx.text) &&
             !CONNECTORS[nx.text.toLowerCase()]) {
-          out.push({ type: "word", text: it.text + nx.text, tolerance: it.tolerance });
+          out.push({ type: "word", text: it.text + nx.text, tolerance: it.tolerance, field: it.field });
           i++; continue;
         }
       }
@@ -287,7 +297,7 @@
       if (it.type === "group") it = { type: "group", items: dedupe(it.items) };
       var prev = out[out.length - 1];
       if (prev && it.type === prev.type && it.type !== "group" &&
-          it.text === prev.text && it.tolerance === prev.tolerance) continue;
+          it.text === prev.text && it.tolerance === prev.tolerance && it.field === prev.field) continue;
       out.push(it);
     }
     return out;
@@ -495,24 +505,58 @@
     return o;
   }
 
-  function run(title, query, opts) {
-    var terms = parseQuery(query);
-    if (opts.ignoreConnectors) terms = dropConnectors(terms);
+  // Pull @brand terms out of the tree (also from inside [..] groups) into
+  // `brand`; returns the remaining title terms with their structure intact.
+  function splitBrand(items, brand) {
+    var rest = [];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it.type === "group") {
+        var sub = splitBrand(it.items, brand);
+        if (sub.length) rest.push({ type: "group", items: sub });
+      } else if (it.field === "brand") brand.push(it);
+      else rest.push(it);
+    }
+    return rest;
+  }
+
+  // Apply the query mode (phrase / order / each-term) to one term list over one text.
+  function termsMatch(text, terms, opts) {
     if (!terms.length) return true;
-    if (opts.requirePhrase) return phraseModeMatch(title, terms, opts);
-    if (opts.requireOrder) return matchOrdered(title, terms, opts, 0) != null;
+    if (opts.requirePhrase) return phraseModeMatch(text, terms, opts);
+    if (opts.requireOrder) return matchOrdered(text, terms, opts, 0) != null;
     for (var i = 0; i < terms.length; i++) {
-      if (!matchItem(title, terms[i], opts, 0)) return false;
+      if (!matchItem(text, terms[i], opts, 0)) return false;
     }
     return true;
   }
 
-  function titleMatches(title, query, options) {
+  function run(title, query, brand, opts) {
+    var terms = parseQuery(query);
+    if (opts.ignoreConnectors) terms = dropConnectors(terms);
+    if (!terms.length) return true;
+    brand = (typeof brand === "string" ? brand : "").replace(/\s+/g, " ").trim();
+    var brandTerms = [];
+    var titleTerms = splitBrand(terms, brandTerms);
+    // Plain terms see "brand title" (brand first, as on a product page); @terms
+    // see the brand alone — or the title when the tile exposes no brand.
+    var withBrand = brand && opts.includeBrand;
+    var ok = termsMatch(withBrand ? brand + " " + title : title, titleTerms, opts);
+    // Order/phrase modes: a query written "V5 DESTEK" must not need the brand to
+    // come after the title, so also try the reverse arrangement.
+    if (!ok && withBrand && (opts.requireOrder || opts.requirePhrase)) {
+      ok = termsMatch(title + " " + brand, titleTerms, opts);
+    }
+    return ok && termsMatch(brand || title, brandTerms, opts);
+  }
+
+  // titleMatches(title, query, options, brand) — brand is optional.
+  function titleMatches(title, query, options, brand) {
     var opts = normalizeOpts(options);
     if (!opts.enabled) return true;
     if (title == null) title = "";
     if (query == null) query = "";
-    try { return run(title, query, opts); }
+    try { return run(title, query, brand, opts); }
     catch (e) { return true; } // fail open: never grey due to an engine error
   }
 
